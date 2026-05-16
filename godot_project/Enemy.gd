@@ -7,7 +7,7 @@ enum State { PATROL, CHASE, ATTACK, WANDER, STUNNED }
 var _path_points: Array[Vector2] = []
 var _current_path_idx: int = 0
 
-var current_state: State = State.PATROL
+@export var current_state: State = State.PATROL
 var patrol_direction: float = 1.0
 var patrol_speed: float = 60.0
 var chase_speed: float = 130.0
@@ -83,9 +83,26 @@ func _process(_delta: float) -> void:
 
 func _draw() -> void:
     if Engine.is_editor_hint():
-        # Editor-only placeholder shape since formal visual children span inside the game loop 
-        draw_rect(Rect2(-12, -12, 24, 24), Color(0.4, 0.4, 0.4))
-        draw_rect(Rect2(4, -4, 8, 8), Color(0.0, 0.95, 1.0))
+        # Editor-only placeholder shape
+        var body_col = Color(0.4, 0.4, 0.4)
+        var eye_col = Color(0.0, 0.95, 1.0)
+        
+        match current_state:
+            State.CHASE:
+                body_col = Color(0.8, 0.6, 0.0)
+                eye_col = Color(1.0, 0.8, 0.0)
+            State.ATTACK:
+                body_col = Color(0.9, 0.1, 0.1)
+                eye_col = Color(1.0, 1.0, 1.0)
+            State.WANDER:
+                body_col = Color(0.3, 0.4, 0.3)
+                eye_col = Color(0.4, 0.9, 0.4)
+            State.STUNNED:
+                body_col = Color(0.2, 0.2, 0.8)
+                eye_col = Color(0.1, 0.1, 0.4)
+                
+        draw_rect(Rect2(-12, -12, 24, 24), body_col)
+        draw_rect(Rect2(4, -4, 8, 8), eye_col)
         
         # Dynamic Patrol Visual Indicator System
         if not patrol_path.is_empty():

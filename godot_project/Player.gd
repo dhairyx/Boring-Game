@@ -24,6 +24,10 @@ var can_dash: bool = true
 var max_jumps: int = 2
 var jumps_left: int = 2
 
+var max_health: int = 100
+var current_health: int = 100
+var health_bar: ProgressBar
+
 var current_state: String = "idle"
 
 @onready var trail: Line2D = $Trail
@@ -35,6 +39,26 @@ var spawn_position: Vector2
 
 func _ready() -> void:
     spawn_position = global_position
+    
+    # Initialize Health Bar UI Elements
+    health_bar = ProgressBar.new()
+    health_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+    health_bar.position = Vector2(-20, -30)
+    health_bar.size = Vector2(40, 6)
+    health_bar.show_percentage = false
+    health_bar.max_value = max_health
+    health_bar.value = current_health
+    
+    # Style the health bar
+    var sb_fill = StyleBoxFlat.new()
+    sb_fill.bg_color = Color(0.9, 0.2, 0.2, 1.0) # Red
+    health_bar.add_theme_stylebox_override("fill", sb_fill)
+    
+    var sb_bg = StyleBoxFlat.new()
+    sb_bg.bg_color = Color(0.2, 0.2, 0.2, 0.8) # Dark
+    health_bar.add_theme_stylebox_override("background", sb_bg)
+    
+    add_child(health_bar)
     
     # Visual enhancement for the neon trail using a texture and gradient
     trail.width = 12.0
@@ -76,7 +100,28 @@ func check_enemy_collisions() -> void:
                     if force_dir == 0: force_dir = sprite.scale.x
                     collider.hit_by_dash(force_dir)
             else:
-                die()
+                # Apply knockback to prevent stacked damage over frames
+                var dir = global_position.direction_to(collider.global_position).x
+                var knockback_dir = -sign(dir) if dir != 0 else -1.0
+                velocity.y = -350
+                velocity.x = knockback_dir * 400
+                take_damage(25)
+
+func take_damage(amount: int) -> void:
+    current_health -= amount
+    if current_health < 0:
+        current_health = 0
+    if health_bar:
+        health_bar.value = current_health
+        
+    # Visual feedback for damage
+    sprite.modulate = Color(1.0, 0.0, 0.0, 1.0)
+    var tween = create_tween()
+    if tween:
+        tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.3)
+        
+    if current_health <= 0:
+        die()
 
 func handle_timers(delta: float) -> void:
     if is_on_floor():
@@ -203,6 +248,10 @@ func respawn() -> void:
     dash_buffer_timer = 0.0
     dash_timer = 0.0
     current_state = "idle"
+    current_health = max_health
+    if health_bar:
+        health_bar.value = current_health
+        
     if trail:
         trail.clear_points()
     

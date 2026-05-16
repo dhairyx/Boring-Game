@@ -6,6 +6,50 @@ func _ready() -> void:
     setup_parallax_background()
     setup_ui()
     spawn_goal()
+    
+    if has_node("/root/GameManager"):
+        var gm = get_node("/root/GameManager")
+        if FileAccess.file_exists(gm.SAVE_FILE_PATH):
+            prompt_load_save()
+
+func prompt_load_save() -> void:
+    var canvas = get_node_or_null("CanvasLayer")
+    if not canvas: return
+    
+    var panel = Panel.new()
+    panel.name = "LoadPrompt"
+    panel.set_anchors_preset(Control.PRESET_CENTER)
+    panel.size = Vector2(300, 150)
+    panel.position = Vector2(362, 225) # Approx center for 1024x600
+    
+    var label = Label.new()
+    label.text = "Save file found.\nWould you like to load your progress?"
+    label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    label.position = Vector2(20, 20)
+    label.size = Vector2(260, 50)
+    panel.add_child(label)
+    
+    var btn_yes = Button.new()
+    btn_yes.text = "Load Game"
+    btn_yes.position = Vector2(40, 90)
+    btn_yes.size = Vector2(100, 40)
+    btn_yes.pressed.connect(func():
+        var gm = get_node("/root/GameManager")
+        if gm.load_game():
+            # Update UI or player based on loaded state if necessary
+            _on_lumen_collected(0, gm.total_lumens)
+        panel.queue_free()
+    )
+    panel.add_child(btn_yes)
+    
+    var btn_no = Button.new()
+    btn_no.text = "New Game"
+    btn_no.position = Vector2(160, 90)
+    btn_no.size = Vector2(100, 40)
+    btn_no.pressed.connect(func(): panel.queue_free())
+    panel.add_child(btn_no)
+    
+    canvas.add_child(panel)
 
 func spawn_goal() -> void:
     var goal_script = load("res://Goal.gd")

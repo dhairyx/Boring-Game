@@ -93,7 +93,7 @@ export default function App() {
 
 const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme, themes }: { theme?: any, setTheme?: any, themes?: any[] }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [gameState, setGameState] = useState<'mainmenu' | 'playing' | 'gameover' | 'paused' | 'settings' | 'won' | 'levelcomplete'>('mainmenu');
+    const [gameState, setGameState] = useState<'mainmenu' | 'playing' | 'gameover' | 'paused' | 'settings' | 'won' | 'levelcomplete' | 'levelselect'>('mainmenu');
     const [previousGameState, setPreviousGameState] = useState<'mainmenu' | 'paused'>('mainmenu');
     const [gameMode, setGameMode] = useState<'story' | 'challenge'>('story');
     const [collectorShape, setCollectorShape] = useState<'square' | 'circle' | 'triangle'>('square');
@@ -105,6 +105,7 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
     const [particleDensity, setParticleDensity] = useState<'low' | 'medium' | 'high'>('high');
     const [postProcessingShader, setPostProcessingShader] = useState(false);
     const [hasSave, setHasSave] = useState(false);
+    const [totalLevelsCount, setTotalLevelsCount] = useState(5);
 
     useEffect(() => {
         setHasSave(!!localStorage.getItem('lumen_drift_save'));
@@ -116,6 +117,83 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
     const difficultyRef = useRef(difficulty);
     const graphicsRef = useRef(graphicsQual);
     const gameModeRef = useRef(gameMode);
+    const soundEnabledRef = useRef(soundEnabled);
+    const audioCtxRef = useRef<AudioContext | null>(null);
+
+    const playSound = (type: 'jump' | 'dash' | 'collect' | 'enemy_hit' | 'level_complete' | 'death') => {
+        if (!soundEnabledRef.current) return;
+        if (!audioCtxRef.current) {
+            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        const ctx = audioCtxRef.current;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        switch (type) {
+            case 'jump':
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, t);
+                osc.frequency.exponentialRampToValueAtTime(600, t + 0.1);
+                gain.gain.setValueAtTime(0.3, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+                osc.start(t);
+                osc.stop(t + 0.2);
+                break;
+            case 'dash':
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(200, t);
+                osc.frequency.exponentialRampToValueAtTime(50, t + 0.2);
+                gain.gain.setValueAtTime(0.5, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+                osc.start(t);
+                osc.stop(t + 0.2);
+                break;
+            case 'collect':
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, t);
+                osc.frequency.setValueAtTime(1200, t + 0.05); // quick arpeggio
+                gain.gain.setValueAtTime(0.2, t);
+                gain.gain.linearRampToValueAtTime(0, t + 0.15);
+                osc.start(t);
+                osc.stop(t + 0.15);
+                break;
+            case 'enemy_hit':
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(100, t);
+                osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+                gain.gain.setValueAtTime(0.4, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+                osc.start(t);
+                osc.stop(t + 0.15);
+                break;
+            case 'death':
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, t);
+                osc.frequency.exponentialRampToValueAtTime(30, t + 0.5);
+                gain.gain.setValueAtTime(0.5, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+                osc.start(t);
+                osc.stop(t + 0.5);
+                break;
+            case 'level_complete':
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, t);
+                osc.frequency.setValueAtTime(500, t + 0.1);
+                osc.frequency.setValueAtTime(600, t + 0.2);
+                osc.frequency.setValueAtTime(800, t + 0.3);
+                gain.gain.setValueAtTime(0.2, t);
+                gain.gain.linearRampToValueAtTime(0, t + 0.6);
+                osc.start(t);
+                osc.stop(t + 0.6);
+                break;
+        }
+    };
     const bloomRef = useRef(bloomEnabled);
     const particleDensityRef = useRef(particleDensity);
     const postProcessingRef = useRef(postProcessingShader);
@@ -160,6 +238,10 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
     }, [graphicsQual]);
 
     useEffect(() => {
+        soundEnabledRef.current = soundEnabled;
+    }, [soundEnabled]);
+
+    useEffect(() => {
         bloomRef.current = bloomEnabled;
     }, [bloomEnabled]);
 
@@ -182,6 +264,8 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
       resumeGame: () => {},
       nextLevel: () => {},
       mainMenu: () => setGameState('mainmenu'),
+      levelSelect: () => setGameState('levelselect'),
+      startLevel: () => {},
       startGame: () => {},
       startChallenge: () => {},
       loadGame: () => {}
@@ -211,6 +295,14 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
       };
       const screenShake = { timer: 0, magnitude: 0 };
       const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, Space: false, w: false, a: false, d: false };
+      const touchState = {
+          active: false,
+          startX: 0, startY: 0,
+          curX: 0, curY: 0,
+          dash: false,
+          jump: false,
+          upSwiped: false
+      };
       const trail: { x: number, y: number, alpha: number }[] = trailStateRef.current || [];
       const particles: { x: number, y: number, vx: number, vy: number, life: number, maxLife: number, color?: string, size?: number }[] = particlesStateRef.current || [];
       
@@ -440,6 +532,18 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
           setGameState('playing');
       };
 
+      gameControl.current.startLevel = (levelIndex: number) => {
+          setGameMode('story');
+          currentLevel = levelIndex;
+          totalLumens = 0;
+          levels.forEach(l => l.lumens.forEach(lum => lum.collected = false));
+          playerStateRef.current = null;
+          resetLevel();
+          localStorage.setItem('lumen_drift_save', JSON.stringify({ currentLevel, totalLumens, lumensState: levels.map(l => l.lumens.map(lum => lum.collected)) }));
+          setHasSave(true);
+          setGameState('playing');
+      };
+
       gameControl.current.loadGame = () => {
           try {
               const dataStr = localStorage.getItem('lumen_drift_save');
@@ -469,6 +573,7 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
             if (gameState === 'playing') setGameState('paused');
             else if (gameState === 'paused') setGameState('playing');
             else if (gameState === 'settings') setGameState(previousGameState);
+            else if (gameState === 'levelselect') setGameState('mainmenu');
             return;
         }
         
@@ -494,9 +599,50 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
               else (keys as any)[e.key] = false;
           }
       };
-  
+
+      const touchStartHandler = (e: TouchEvent) => {
+          if (e.target === canvasRef.current) e.preventDefault();
+          if (e.touches.length > 0) {
+              const t = e.touches[0];
+              touchState.active = true;
+              touchState.startX = t.clientX;
+              touchState.startY = t.clientY;
+              touchState.curX = t.clientX;
+              touchState.curY = t.clientY;
+              touchState.upSwiped = false;
+          }
+      };
+
+      const touchMoveHandler = (e: TouchEvent) => {
+          if (e.target === canvasRef.current) e.preventDefault();
+          if (e.touches.length > 0) {
+              const t = e.touches[0];
+              touchState.curX = t.clientX;
+              touchState.curY = t.clientY;
+
+              if (!touchState.upSwiped && touchState.startY - touchState.curY > 40) {
+                  touchState.jump = true;
+                  touchState.upSwiped = true;
+              }
+          }
+      };
+
+      const touchEndHandler = (e: TouchEvent) => {
+          if (e.target === canvasRef.current) e.preventDefault();
+          const dx = Math.abs(touchState.curX - touchState.startX);
+          const dy = Math.abs(touchState.curY - touchState.startY);
+          
+          if (dx < 15 && dy < 15) {
+              touchState.dash = true;
+          }
+          touchState.active = false;
+      };
+
       window.addEventListener('keydown', keyDownHandler, { passive: false });
       window.addEventListener('keyup', keyUpHandler, { passive: false });
+      window.addEventListener('touchstart', touchStartHandler, { passive: false });
+      window.addEventListener('touchmove', touchMoveHandler, { passive: false });
+      window.addEventListener('touchend', touchEndHandler, { passive: false });
   
       let lastTime = performance.now();
       let animationFrameId: number;
@@ -551,6 +697,7 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
           if (player.dead) return;
           player.dead = true;
           player.deathTimer = 1.0;
+          playSound('death');
           
           triggerShake(15, 0.4);
           
@@ -613,17 +760,27 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                 triggerDeath();
             }
       
-            const dirX = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
-            const jumpPressed = keys.ArrowUp || keys.w;
+            let touchDirX = 0;
+            if (touchState.active) {
+                const dx = touchState.curX - touchState.startX;
+                if (dx > 30) touchDirX = 1;
+                else if (dx < -30) touchDirX = -1;
+            }
+
+            const dirX = (keys.ArrowRight || keys.d || touchDirX === 1 ? 1 : 0) - (keys.ArrowLeft || keys.a || touchDirX === -1 ? 1 : 0);
+            const jumpPressed = keys.ArrowUp || keys.w || touchState.jump;
+            touchState.jump = false; // consume jump
         
-        if (keys.Space && player.canDash && !player.isDashing) {
+        if ((keys.Space || touchState.dash) && player.canDash && !player.isDashing) {
             player.isDashing = true;
             player.dashTimer = DASH_DURATION;
             player.canDash = false;
             const dashDir = dirX !== 0 ? dirX : (player.facingRight ? 1 : -1);
             player.vx = dashDir * DASH_SPEED * player.momentumMult;
             spawnParticles(player.x + player.width/2, player.y + player.height/2, 10, 0.5, '#ffffff'); // Dash burst
+            playSound('dash');
         }
+        touchState.dash = false; // consume dash
   
         if (player.isDashing) {
             player.dashTimer -= delta;
@@ -724,24 +881,28 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                 player.vy = JUMP_VELOCITY; keys.ArrowUp = false; keys.w = false;
                 player.jumpsLeft--;
                 spawnParticles(player.x + player.width/2, player.y + player.height, 5, 0.3, '#333', 2); // Jump dust
+                playSound('jump');
             } else if (onWall) {
                 player.isDashing = false;
                 player.vy = JUMP_VELOCITY * 1.1; 
                 player.vx = onWallRight ? -SPEED * 2.5 : SPEED * 2.5; 
                 keys.ArrowUp = false; keys.w = false;
                 player.jumpsLeft--;
+                playSound('jump');
             } else if (player.jumpsLeft > 0) {
                 player.isDashing = false;
                 player.vy = JUMP_VELOCITY * 0.9; // Double jump
                 keys.ArrowUp = false; keys.w = false;
                 player.jumpsLeft--;
                 spawnParticles(player.x + player.width/2, player.y + player.height, 8, 0.3, themeRef.current.hex, 2); // Double jump burst
+                playSound('jump');
             }
         }
         
         // Level Transition
         const allLumensCollected = levels[currentLevel].lumens.every(l => l.collected);
         if (AABB(player, levels[currentLevel].goal) && allLumensCollected) {
+            playSound('level_complete');
             if (gameModeRef.current === 'challenge') {
                 currentLevel++;
                 if (currentLevel >= levels.length) {
@@ -766,6 +927,7 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                 madeLumenProgress = true;
                 triggerShake(2, 0.1);
                 spawnParticles(lumen.x + lumen.w/2, lumen.y + lumen.h/2, 15, 1.0, undefined, 3);
+                playSound('collect');
             }
         }
         if (madeLumenProgress) {
@@ -778,8 +940,8 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
         for (const enemy of levels[currentLevel].enemies) {
             const ENEMY_PATROL_SPEED = 60 * diffMult;
             const ENEMY_CHASE_SPEED = 130 * diffMult;
-            const DETECT_RADIUS = 250;
-            const ATTACK_RADIUS = 35;
+            const DETECT_RADIUS = 250 * diffMult;
+            const ATTACK_RADIUS = 35 * diffMult;
             
             const pxCenter = player.x + player.width/2;
             const pyCenter = player.y + player.height/2;
@@ -863,9 +1025,12 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                     triggerDeath();
                 } else if (AABB(player, enemy) && player.isDashing) {
                     // If the player hits them mid-dash, knock enemy out of the way for flair
-                    enemy.w = 0; 
-                    spawnParticles(enemy.x, enemy.y, 20, 1.5, themeRef.current.hex);
-                    triggerShake(8, 0.2);
+                    if (enemy.w > 0) {
+                        enemy.w = 0; 
+                        spawnParticles(enemy.x, enemy.y, 20, 1.5, themeRef.current.hex);
+                        triggerShake(8, 0.2);
+                        playSound('enemy_hit');
+                    }
                 }
             }
         } // End of enemy loop
@@ -919,13 +1084,19 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
         ctx.textBaseline = 'alphabetic';
 
         // Parallax Background Simulation (Moves relative to player pos to simulate depth)
-        for (const s of stars) {
+        const activeGraphics = graphicsRef.current;
+        const starCount = activeGraphics === 'low' ? 20 : (activeGraphics === 'medium' ? 40 : stars.length);
+        const pillarCount = activeGraphics === 'low' ? 3 : (activeGraphics === 'medium' ? 6 : pillars.length);
+        const driftAmount = time * 0.005; // Independent slow global drift
+
+        for (let i = 0; i < starCount; i++) {
+            const s = stars[i];
             ctx.fillStyle = s.isAccent ? themeRef.current.hex : '#ffffff';
             ctx.globalAlpha = s.isAccent ? 0.4 : 0.7;
             ctx.beginPath();
             
-            // Apply motion offset based on player pos, wrapped seamlessly
-            const px = (s.x - player.x * s.speed) % canvas.width;
+            // Apply motion offset based on player pos + global drift, wrapped seamlessly
+            const px = (s.x - player.x * s.speed - driftAmount * s.speed * 20) % canvas.width;
             const py = (s.y - player.y * s.speed) % canvas.height;
             const drawX = px < 0 ? px + canvas.width : px;
             const drawY = py < 0 ? py + canvas.height : py;
@@ -935,11 +1106,12 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
         }
 
         // Midground Parallax (Pillars)
-        for (const p of pillars) {
+        for (let i = 0; i < pillarCount; i++) {
+            const p = pillars[i];
             ctx.fillStyle = `rgba(${activeThemeRgb}, ${p.alpha})`;
             
-            // Apply motion offset
-            const px = (p.x - player.x * p.speed) % (canvas.width + p.w * 2);
+            // Apply motion offset + global drift
+            const px = (p.x - player.x * p.speed - driftAmount * p.speed * 10) % (canvas.width + p.w * 2);
             const drawX = px < -p.w ? px + canvas.width + p.w * 2 : px;
             
             ctx.fillRect(drawX, canvas.height - p.h, p.w, p.h);
@@ -1149,7 +1321,7 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
         ctx.shadowBlur = 0; // Reset shadow for text rendering
   
         ctx.fillStyle = '#666'; ctx.font = '11px monospace';
-        ctx.fillText(`WASD/Arrows: MOVE  Space: DASH  Wall: SLIDE/JUMP  --- LEVEL ${currentLevel + 1}/${levels.length} ---`, 20, 30);
+        ctx.fillText(`WASD/Swipe: MOVE  Space/Tap: DASH  --- LEVEL ${currentLevel + 1}/${levels.length} ---`, 20, 30);
         
         ctx.fillStyle = themeRef.current.hex; ctx.font = 'bold 24px monospace';
         ctx.shadowBlur = 4 * (bloomRef.current && graphicsRef.current === 'high' ? 1 : 0); ctx.shadowColor = '#000000';
@@ -1203,16 +1375,18 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
       return () => {
           window.removeEventListener('keydown', keyDownHandler);
           window.removeEventListener('keyup', keyUpHandler);
+          window.removeEventListener('touchstart', touchStartHandler);
+          window.removeEventListener('touchmove', touchMoveHandler);
+          window.removeEventListener('touchend', touchEndHandler);
           cancelAnimationFrame(animationFrameId);
       };
     }, [gameState, previousGameState]);
   
     return (
       <div className="flex-1 flex flex-col bg-[#0A0A0A]">
-        <div className="flex-1 flex items-center justify-center p-2 sm:p-4 w-full h-full relative min-h-0 overflow-hidden">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] max-w-[800px] aspect-square rounded-full blur-[120px] pointer-events-none transition-colors duration-1000" style={{ backgroundColor: `${theme.hex}15` }}></div>
+        <div className="flex-1 flex items-center justify-center p-0 md:p-4 w-full h-full relative min-h-0 overflow-hidden">
           <div 
-            className="relative z-10 border p-1 md:p-2 bg-[#1A1A1A] rounded-xl shadow-2xl overflow-hidden transition-colors flex items-center justify-center w-full max-w-[1400px] aspect-[2/1] max-h-full" 
+            className="relative z-10 border-0 md:border p-0 md:p-2 bg-[#1A1A1A] md:rounded-xl shadow-2xl overflow-hidden transition-colors flex items-center justify-center w-full max-w-[1400px] aspect-[2/1] max-h-full" 
             style={{ 
               borderColor: `${theme.hex}40`,
               maxWidth: 'min(1400px, calc((100vh - 100px) * 2))' 
@@ -1298,9 +1472,9 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                             </button>
                         </div>
 
-                        {/* Simulation Hardness */}
+                        {/* Difficulty */}
                         <div className="flex flex-col gap-3">
-                            <div className="text-[12px] text-white uppercase tracking-widest opacity-80">Simulation Hardness</div>
+                            <div className="text-[12px] text-white uppercase tracking-widest opacity-80">Difficulty</div>
                             <div className="flex bg-[#111] border border-[#333] p-1 rounded gap-1">
                                 {(['easy', 'medium', 'hard'] as const).map(diff => (
                                     <button
@@ -1438,17 +1612,17 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                         </div>
                     </div>
                     
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center justify-center gap-4 max-w-3xl">
                         {hasSave && (
                             <button 
                                 onClick={gameControl.current.loadGame}
-                                className="bg-[#0f0f0f] border py-4 px-10 transition-all font-mono font-bold tracking-[6px] text-lg hover:bg-[#111]"
+                                className="bg-[#0f0f0f] border py-4 px-8 transition-all font-mono font-bold tracking-[6px] text-lg hover:bg-[#111]"
                                 style={{ borderColor: theme.hex, color: theme.hex, boxShadow: `0 0 15px ${theme.hex}30` }}
                             >CONTINUE</button>
                         )}
                         <button 
                             onClick={gameControl.current.startGame}
-                            className={`bg-[#0f0f0f] border py-4 px-10 transition-all font-mono font-bold tracking-[6px] text-lg hover:bg-[#111] ${hasSave ? 'opacity-60 hover:opacity-100' : ''}`}
+                            className={`bg-[#0f0f0f] border py-4 px-8 transition-all font-mono font-bold tracking-[6px] text-lg hover:bg-[#111] ${hasSave ? 'opacity-60 hover:opacity-100' : ''}`}
                             style={{ borderColor: theme.hex, color: theme.hex, boxShadow: hasSave ? 'none' : `0 0 15px ${theme.hex}30` }}
                         >NEW STORY</button>
                         
@@ -1457,6 +1631,11 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                             className="bg-[#0f0f0f] border border-[#ff3333]/50 py-4 px-8 transition-all font-mono font-bold tracking-[6px] text-lg text-[#ff3333] hover:bg-[#ff3333]/10 hover:border-[#ff3333]"
                             style={{ boxShadow: `0 0 15px rgba(255,51,51,0.2)` }}
                         >CHALLENGE</button>
+
+                        <button 
+                            onClick={gameControl.current.levelSelect}
+                            className="bg-[#0f0f0f] border border-[#333] py-4 px-8 transition-all font-mono font-bold tracking-[6px] text-lg text-gray-400 hover:bg-[#222] hover:text-white"
+                        >LEVELS</button>
                         
                         <button 
                             onClick={() => { setPreviousGameState('mainmenu'); setGameState('settings'); }}
@@ -1465,6 +1644,43 @@ const GamePreview = ({ theme = { hex: '#00F2FF', rgb: '0, 242, 255' }, setTheme,
                         >
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {gameState === 'levelselect' && (
+                <div className="absolute inset-0 bg-[#050505]/95 flex flex-col items-center justify-center z-40 backdrop-blur-md">
+                    <button 
+                        onClick={gameControl.current.mainMenu}
+                        className="absolute top-6 left-6 text-gray-500 hover:text-white transition-colors flex items-center gap-2"
+                        title="Back to Menu"
+                    >
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"></path><polyline points="12 19 5 12 12 5"></polyline></svg>
+                        <span className="font-mono text-sm tracking-widest hidden sm:inline-block">ESC</span>
+                    </button>
+                    
+                    <h2 className="text-white text-3xl mb-12 font-black tracking-widest" style={{ color: theme.hex, textShadow: `0 0 15px ${theme.hex}50` }}>SELECT LEVEL</h2>
+                    
+                    <div className="flex flex-wrap justify-center max-w-2xl gap-4 p-4">
+                        {Array.from({ length: totalLevelsCount }).map((_, i) => {
+                            // Check if unlocked (we can assume all are unlocked for now or use the saved data if available. For simplicity, just allow clicking, maybe visual style is different)
+                            // A simple save system logic could highlight levels where you have collected lumens. 
+                            return (
+                                <button
+                                    key={`level-${i}`}
+                                    onClick={() => gameControl.current.startLevel(i)}
+                                    className="w-20 h-20 bg-[#0A0A0A] border rounded flex items-center justify-center text-2xl font-bold font-mono transition-all hover:scale-105"
+                                    style={{ 
+                                        borderColor: theme.hex, 
+                                        color: theme.hex, 
+                                        boxShadow: `0 0 15px ${theme.hex}20`,
+                                        textShadow: `0 0 8px ${theme.hex}80` 
+                                    }}
+                                >
+                                    {i + 1}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}
